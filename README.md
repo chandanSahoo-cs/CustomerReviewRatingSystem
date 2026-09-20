@@ -162,17 +162,6 @@ This repository currently contains **only the project foundation**:
   `providers.jsx` with TanStack Query, and a shared Axios `apiClient`), with a
   single placeholder route.
 
-None of the following are implemented yet: authentication, users, products,
-reviews, votes, admin dashboard, Mongoose schemas, or business routes/middleware
-beyond what's listed above. These will be added incrementally, module by module,
-following the architecture documented here.
 
-## Engineering principles
 
-1. Keep controllers thin; business logic lives in services.
-2. Keep database logic close to its owning module.
-3. Avoid unnecessary abstractions and duplicate business logic.
-4. Validate all external input; centralize error handling.
-5. Use environment variables for secrets/config — never commit secrets.
-6. Use appropriate database indexes; keep modules loosely coupled.
-7. Prefer simple solutions; do not prematurely optimize or over-engineer.
+

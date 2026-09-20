@@ -2,6 +2,7 @@ import Product from './product.model.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { getCache, setCache, deleteCache, deleteCacheByPrefix } from '../../services/cache.service.js';
 import { CURSOR_SORT, parsePaginationParams, buildCursorFilter, buildPaginationMeta } from '../../utils/pagination.js';
+import { recordCacheResult } from '../../monitoring/metrics.js';
 
 const LIST_CACHE_PREFIX = 'products:list:';
 const DETAIL_CACHE_PREFIX = 'products:detail:';
@@ -75,6 +76,7 @@ export async function listProducts(query) {
   const cacheKey = buildListCacheKey(limit, query?.cursor);
 
   const cached = await getCache(cacheKey);
+  recordCacheResult('product_list', Boolean(cached));
   if (cached) return cached;
 
   const filter = buildCursorFilter(cursor);
@@ -93,6 +95,7 @@ export async function getProductById(productId) {
   const cacheKey = buildDetailCacheKey(productId);
 
   const cached = await getCache(cacheKey);
+  recordCacheResult('product_detail', Boolean(cached));
   if (cached) return cached;
 
   const product = await Product.findById(productId).lean();

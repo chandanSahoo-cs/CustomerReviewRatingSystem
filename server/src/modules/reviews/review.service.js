@@ -4,6 +4,7 @@ import Product from '../products/product.model.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { getCache, setCache, deleteCache, deleteCacheByPrefix } from '../../services/cache.service.js';
 import { CURSOR_SORT, parsePaginationParams, buildCursorFilter, buildPaginationMeta } from '../../utils/pagination.js';
+import { recordCacheResult } from '../../monitoring/metrics.js';
 
 const REVIEW_LIST_CACHE_PREFIX = 'reviews:list:';
 // Matches the key format product.service.js uses for its own detail cache.
@@ -121,6 +122,7 @@ export async function listReviews(productId, query) {
   const cacheKey = buildReviewListCacheKey(productId, limit, query?.cursor);
 
   const cached = await getCache(cacheKey);
+  recordCacheResult('review_list', Boolean(cached));
   if (cached) return cached;
 
   const filter = { productId: new mongoose.Types.ObjectId(productId), ...buildCursorFilter(cursor) };

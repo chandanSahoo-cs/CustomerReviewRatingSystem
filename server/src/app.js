@@ -4,6 +4,8 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import env from './config/env.js';
 import { errorMiddleware, notFoundMiddleware } from './middleware/error.middleware.js';
+import { httpMetricsMiddleware } from './monitoring/httpMetrics.middleware.js';
+import { metricsHandler } from './monitoring/metrics.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import productRoutes from './modules/products/product.routes.js';
 import { productReviewsRouter, reviewsRouter } from './modules/reviews/review.routes.js';
@@ -26,10 +28,16 @@ app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 app.use(cookieParser());
 
+// --- Prometheus HTTP instrumentation (records count/duration/status only) --
+app.use(httpMetricsMiddleware);
+
 // --- Health check -----------------------------------------------------------
 app.get('/api/v1/health', (req, res) => {
   res.status(200).json({ success: true, data: { status: 'ok' } });
 });
+
+// --- Prometheus scrape endpoint ---------------------------------------------
+app.get('/metrics', metricsHandler);
 
 // --- Feature module routes are mounted here as they are implemented. -------
 app.use('/api/v1/auth', authRoutes);

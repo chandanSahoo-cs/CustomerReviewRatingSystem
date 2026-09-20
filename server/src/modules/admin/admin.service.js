@@ -2,6 +2,7 @@ import Product from '../products/product.model.js';
 import Review from '../reviews/review.model.js';
 import User from '../users/user.model.js';
 import { getCache, setCache } from '../../services/cache.service.js';
+import { recordCacheResult } from '../../monitoring/metrics.js';
 
 const DASHBOARD_CACHE_KEY = 'admin:dashboard';
 const RECENT_LIMIT = 5;
@@ -59,6 +60,7 @@ function toRecentReview(doc) {
  */
 export async function getDashboard() {
   const cached = await getCache(DASHBOARD_CACHE_KEY);
+  recordCacheResult('admin_dashboard', Boolean(cached));
   if (cached) return cached;
 
   const [[productAgg], [reviewAgg], totalCustomers, recentProductsRaw, recentReviewsRaw] = await Promise.all([

@@ -1,0 +1,16 @@
+# Minimal local Prometheus config for the CustomerReviewRatingSystem backend.
+#
+# Run locally (no Docker):
+#   prometheus --config.file=server/monitoring/prometheus.yml
+#
+# The target below must match the backend's PORT (see server/.env).
+# The app currently runs on port 5050 — update this if PORT ever changes.
+
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'customer-review-rating-backend'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['localhost:5050']
