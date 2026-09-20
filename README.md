@@ -1,114 +1,105 @@
 # Customer Review & Rating Management System
 
-A professional, modular, scalable **Customer Review & Rating Management System**
-built on the MERN stack. This is **not** a CRM — it is a product catalog + review/rating
-platform with exactly two user roles.
+A full-stack **product catalog + review & rating platform** built on the MERN
+stack, with AI-assisted review insights and optional local monitoring. Built as
+a modular monolith with exactly two user roles: **Customer** and **Admin**.
 
-> **Status:** Project foundation only. No features (auth, products, reviews, votes,
-> dashboard) have been implemented yet — see [Current status](#current-status).
+## Features
 
-## Roles
+**Customer**
+- Register / login (JWT, HttpOnly cookies) and view profile
+- Browse products with cursor-based pagination and search
+- View product details, aggregate rating stats, and AI-generated review summaries
+- Create, edit, and delete their own reviews (1–5 star rating + title + body)
+- Upvote / downvote reviews
+- Report inappropriate reviews
+- Receive notifications (e.g. when a reported review is actioned)
 
-- **Customer** — register/login, browse products, view product details, view reviews
-  and ratings, create a review with a 1–5 star rating, edit/delete their own reviews,
-  upvote/downvote reviews.
-- **Admin** — login, view dashboard/analytics, create/update/delete products,
-  view/manage reviews.
+**Admin**
+- Dashboard with product/review/customer totals, rating distribution, and vote counts
+- Full product management (create, update, delete)
+- Review moderation via user reports (approve → removes review, dismiss)
+- Per-product AI review insights (summary + sentiment), generated nightly
+
+**Platform**
+- AI-generated review summaries and sentiment via Google Gemini (scheduled cron job)
+- Redis caching (cache-aside) for hot read paths, with targeted invalidation on writes
+- Optional local Prometheus + Grafana monitoring (HTTP + cache metrics)
 
 ## Architecture
 
-**Modular monolith.** One React frontend, one Express backend, MongoDB Atlas as the
+**Modular monolith.** One React frontend, one Express backend, MongoDB as the
 source of truth, Redis used strictly as a cache. JWT-based stateless authentication.
 
 ```
-Route → Middleware → Controller → Service → Mongoose Model → MongoDB
+Client → Route → Middleware (auth/role) → Controller → Service → Model → MongoDB / Redis
 ```
 
 - Controllers stay thin; business logic lives in services.
-- No repository layer, no CQRS, no event sourcing, no microservices, no message
-  queues (Kafka/RabbitMQ, etc.).
-- Frontend is a single app with role-based routing — **not** separate customer/admin
-  apps.
+- Each backend module (`auth`, `products`, `reviews`, `votes`, `admin`, `reports`,
+  `notifications`) owns its own model, service, controller, routes, and validation.
+- No repository layer, no CQRS, no event sourcing, no message queues.
+- Frontend is a single app with role-based routing — not separate customer/admin apps.
 
 ### Repository layout
 
 ```
 CustomerReviewRatingSystem/
-├── client/    React (Vite) frontend — customer + admin experiences, role-based routing
+├── client/    React (Vite) frontend — customer + admin experiences
 ├── server/    Express backend — modular monolith, /api/v1
 └── README.md
 ```
 
-### Backend module layout (target — filled in incrementally)
+### Backend module layout
 
 ```
 server/src/
 ├── config/          env, MongoDB, Redis connections
-├── modules/         auth, users, products, reviews, votes, admin
-│                    (each owns its model, controller, service, routes, validation)
-├── middleware/       auth, admin, validation, rate limiting, centralized error handling
-├── services/        cache.service.js (centralized Redis cache access)
-├── utils/           ApiError, ApiResponse, asyncHandler, pagination
+├── modules/         auth, users, products, reviews, votes, admin, reports, notifications
+├── middleware/      auth, admin/customer role guards, validation, rate limiting, error handling
+├── services/        cache.service.js, gemini.service.js, reviewSummary.cron.js
+├── monitoring/       Prometheus metrics (HTTP + cache), /metrics endpoint
+├── utils/           ApiError, ApiResponse, asyncHandler, cursor pagination
+├── scripts/         seed scripts (admin, products, full dataset)
 ├── app.js
 └── server.js
 ```
 
-### Frontend module layout (target — filled in incrementally)
+### Frontend module layout
 
 ```
 client/src/
-├── app/             App.jsx, routes.jsx, providers.jsx
-├── components/      ui/, layout/, common/
-├── features/        auth, products, reviews, votes, dashboard
-├── pages/           customer/, admin/
-├── layouts/         CustomerLayout.jsx, AdminLayout.jsx
+├── app/             App.jsx, routes, providers
+├── components/      ui/, common/
+├── context/         Auth, Toast, etc.
+├── features/        auth, products, reviews, votes, admin, reports, notifications
+├── layouts/         CustomerLayout, AdminLayout
 ├── services/        apiClient.js (Axios instance)
 └── utils/
 ```
 
-### Routing
+### Data model (MongoDB)
 
-Frontend (role-based, single app):
-
-```
-/products
-/products/:productId
-/admin/dashboard
-/admin/products
-/admin/reviews
-```
-
-Backend API (versioned):
-
-```
-/api/v1/auth/...
-/api/v1/products/...
-/api/v1/products/:productId/reviews
-/api/v1/reviews/:reviewId
-/api/v1/reviews/:reviewId/vote
-/api/v1/admin/dashboard
-```
-
-### Data model (MongoDB Atlas)
-
-Four collections: `users`, `products`, `reviews`, `votes`. `Product.ratingStats`
-(average, count, distribution) is intentionally denormalized and is maintained by
-review mutations (with transactions where a review and product stats must stay
-consistent) rather than recomputed from all reviews on every request.
+Core collections: `users`, `products`, `reviews`, `votes`, `reports`, `notifications`.
+`Product.ratingStats` (average, count, distribution) and `Review.voteStats` are
+intentionally denormalized and kept in sync atomically (via MongoDB transactions)
+whenever a review or vote mutation occurs, rather than recomputed on every request.
 
 ### Caching
 
 Redis is **only** a cache — never primary storage, sessions, rate limiting, or
-messaging — accessed through a centralized cache service. Candidates: product
-list/detail, product reviews, admin dashboard stats, invalidated on writes.
+messaging — accessed through a centralized cache service using a cache-aside
+pattern. Cached: product list/detail, per-product review list, and the admin
+dashboard, each invalidated on the writes that affect them.
 
 ### Auth & security
 
-Stateless JWT (minimal payload: `sub`, `role`, `iat`, `exp`) delivered via
-HttpOnly + Secure + SameSite cookies. Passwords hashed with bcrypt/Argon2id.
-Backend authorization is authoritative; frontend guards are UX-only. Helmet, CORS,
-input validation, centralized error handling, request body size limits, and
-rate limiting on the login endpoint (via `express-rate-limit`, in-memory — not Redis).
+Stateless JWT (minimal payload: `sub`, `role`) delivered via HttpOnly + SameSite
+cookies. Passwords hashed with bcrypt. Role-based route guards (`customer`/`admin`)
+plus resource-ownership checks (e.g. a review can only be edited by its author).
+Helmet, CORS (single allowed origin, credentialed), input validation via Zod,
+centralized error handling, request body size limits, and rate limiting on the
+login endpoint.
 
 ### API response format
 
@@ -125,43 +116,48 @@ rate limiting on the login endpoint (via `express-rate-limit`, in-memory — not
 
 ## Tech stack
 
-**Frontend:** React, Vite, React Router, TanStack Query, Axios, React Hook Form, Zod,
-Tailwind CSS.
+**Frontend:** React, Vite, React Router, TanStack Query, Axios, React Hook Form,
+Zod, Tailwind CSS.
 
-**Backend:** Express, Mongoose (MongoDB Atlas), Redis (cache only), JWT auth (added
-with the auth module), Helmet, CORS, express-rate-limit (added with the auth module).
+**Backend:** Express, Mongoose (MongoDB), Redis (cache only), JWT auth, bcrypt,
+Zod, Helmet, CORS, express-rate-limit, node-cron, Google Generative AI (Gemini).
+
+**Monitoring (optional, local-only):** prom-client, Prometheus, Grafana.
 
 ## Getting started
 
-Requires Node.js 18+.
+Requires Node.js 18+, MongoDB, and Redis.
 
 ```bash
 npm install          # installs client + server workspaces
-npm run dev:server   # start the Express API (needs MongoDB + Redis reachable)
-npm run dev:client   # start the Vite dev server
 ```
 
-Copy the example env files and fill in real values before running anything that
-needs a database or cache:
+Copy the example env files and fill in real values (Mongo URI, JWT secret, etc.)
+before running anything that needs a database or cache:
 
 ```bash
 cp server/.env.example server/.env
 cp client/.env.example client/.env
 ```
 
-## Current status
+Run each app in its own terminal:
 
-This repository currently contains **only the project foundation**:
+```bash
+npm run dev:server   # start the Express API (needs MongoDB + Redis reachable)
+npm run dev:client    # start the Vite dev server
+```
 
-- Root npm workspace wiring `client` and `server`.
-- `server`: Express app bootstrap (`app.js`/`server.js`), env/DB/Redis config,
-  centralized error handling, a generic cache service, and shared utils
-  (`ApiError`, `ApiResponse`, `asyncHandler`). A single `/api/v1/health` route
-  exists to verify the server boots.
-- `client`: Vite + React + Tailwind CSS app shell (`app/App.jsx`, `routes.jsx`,
-  `providers.jsx` with TanStack Query, and a shared Axios `apiClient`), with a
-  single placeholder route.
+Optional: seed the database with demo data.
 
+```bash
+npm run seed --workspace server         # full demo dataset
+npm run seed:admin --workspace server   # just an admin user
+```
 
+## Monitoring (optional)
 
-
+A minimal Prometheus + Grafana setup is available under `server/monitoring/`
+(HTTP request/latency/error metrics and Redis cache hit/miss ratios). It runs
+entirely locally, with no Docker required, and is completely optional — the
+application works normally with or without it. See `server/monitoring/README.md`
+for setup steps.
